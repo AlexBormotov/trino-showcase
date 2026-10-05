@@ -75,5 +75,5 @@ Host ports avoid 5432 and 8080, which are taken on the dev machine: Trino on 180
 
 ## Repository
 
-- `federated-health-semantic-layer` on GitHub. Private until the MVP is done, then public. MIT licence, English throughout.
+- `trino-showcase` on GitHub: the name says it is a reference project for the tool stack; the README title names the domain. Private until the MVP is done, then public. MIT licence, English throughout.
 - Not committed: `data/`, `.claude/`, `ai-factory-kit/`, `CLAUDE.local.md`, and the personal notes `docs/QUERY.md` and `docs/GRILLME.md`.
