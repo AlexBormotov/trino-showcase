@@ -1,0 +1,20 @@
+# Local only: unlicensed kit, agent config, personal notes, generated data
+/ai-factory-kit/
+/.claude/
+/CLAUDE.local.md
+/docs/QUERY.md
+/docs/GRILLME.md
+/data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# dbt
+target/
+dbt_packages/
+logs/
+
+.env
