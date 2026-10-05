@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Stages 1 (sources and federation) and 2 (canonical model) are done, stage 3 (semantic layer) is in progress; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
+Stages 1 (sources and federation), 2 (canonical model) and 3 (semantic layer) are done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
 
 ## Working rules
 
@@ -39,8 +39,9 @@ Source data: Synthea CSV export (run in a container), reshaped by a Python seede
 sources (pg / mysql / iceberg)  ->  Trino catalogs  ->  dbt-trino
    staging/<tenant>/<schema_version>   (views)
    canonical/                          (union over tenants, tenant_id column, views by default)
-   marts/
--> semantic/ (Ossie YAML -> MetricFlow manifest; Ossie -> Superset metrics)
+   marts/                              (fct_encounter, fct_claim, dim_patient: row-level flags)
+-> semantic/clinic_analytics.yaml (Ossie) -> semantic/compile.py -> target/semantic_manifest.json -> mf
+                                         -> Superset metrics (planned)
 ```
 
 Key ideas, which require reading several parts together:
@@ -50,7 +51,7 @@ Key ideas, which require reading several parts together:
 - **Canonical model** (`models/canonical/`): `patient`, `encounter`, `diagnosis`, `claim`, all views stored in Polaris (`iceberg.canonical`). Keys are hashes of business keys (`<entity>_hk`, macro `hash_key`); `patient_hk` is durable across versions, `patient_version_hk` identifies an SCD2 version. Every row carries `tenant_id`, `source_system`, `source_schema_version`. `patient` keeps SCD2 history (`valid_from_ts`/`valid_to_ts`/`is_current`), replayed from the `clinic_a` change log; snapshot tenants have one open version. See ADR 0002.
 - **Federation first, materialize by exception.** Canonical models are views. Materializing to Iceberg is a measured decision (EXPLAIN ANALYZE before/after, ADR), not a default.
 - **Oracles.** `data/manifest.json` holds `expected` (clean Synthea truth per tenant) and `injected` (what drift was added). `tests/integration/test_canonical.py` requires the canonical model to equal `expected`, and orphan counts to equal `injected`. dbt relationship tests on `clinic_c` orphans are `warn` by design. Never loosen a reconciliation assertion to make it pass: find which transform is wrong.
-- **One metric definition.** Metrics live only in Ossie YAML (`semantic/`). MetricFlow and Superset both receive generated definitions; never hand-write metric SQL in marts or in Superset. Tests compare each metric's value across `mf query` and Superset/Trino.
+- **One metric definition.** Metrics live only in `semantic/clinic_analytics.yaml` (Ossie); `docs/metrics.md` explains them. MetricFlow (and later Superset) receive generated definitions; never hand-write metric SQL in marts or BI. Marts hold only row-level flags (`readmitted_30d`, `denied_claim`, ...) that Ossie aggregates, because Ossie expressions cannot span rows. `tests/integration/test_metrics.py` checks every metric against the manifest or independent SQL; `tests/unit/test_semantic.py` checks the Ossie round trip.
 - **Security** (`trino/etc/`): file-based access control with per-tenant row filters on `tenant_id`, PHI column masks, and an event listener for audit logs. Roles: `tenant_a_analyst`, `cross_tenant_analyst`, `admin`. No authentication in v1; the user comes from `--user`.
 - **Seeder** (`seed/`): `build.py` is pure pandas (Synthea frames -> tenant dialects + injected drift, unit-tested on tiny fixtures), `load.py` writes PostgreSQL via COPY, MySQL via batched inserts, and Iceberg via PyIceberg straight to Polaris (not through Trino). Tenant DDL lives in `infra/tenants/*.sql`. Integration tests compare Trino counts with `data/manifest.json`.
 - **Stack bootstrap** is ordered by compose health checks: `polaris-bootstrap` (realm + root credentials in PostgreSQL) and `create-bucket` must finish before Polaris starts; `polaris-setup` (`infra/polaris/setup.sh`, creates catalog `lake` on `s3://warehouse/lake`) must finish before Trino starts. Both are idempotent, so `poe up` is safe to rerun. Changing catalog properties in `setup.sh` takes effect only on a fresh volume (`poe reset`).

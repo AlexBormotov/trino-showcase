@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: fct_encounter
+    columns:
+      - name: encounter_hk
+        data_tests: [unique, not_null]
+      - name: inpatient_stay
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+      - name: readmitted_30d
+        description: 1 if an inpatient stay is followed by another inpatient admission within 30 days of discharge; NULL for other encounter classes.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+  - name: fct_claim
+    columns:
+      - name: claim_hk
+        data_tests: [unique, not_null]
+  - name: dim_patient
+    columns:
+      - name: patient_hk
+        data_tests: [unique, not_null]

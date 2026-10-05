@@ -13,5 +13,7 @@ models:
       +schema: staging
     canonical:
       +schema: canonical
+    marts:
+      +schema: marts
     semantic:
       +schema: semantic
