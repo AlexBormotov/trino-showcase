@@ -2,9 +2,9 @@
 
 Goal: three tenants with injected drift, all readable through Trino. Scope and decisions: `docs/PLAN.md`.
 
-- [ ] 1. Docker resources: raise `.wslconfig` memory to 16GB, swap 4GB (needs `wsl --shutdown`, ask the user first).
+- [x] 1. Docker resources: raise `.wslconfig` memory to 16GB, swap 4GB (needs `wsl --shutdown`, ask the user first).
   Check: `docker info --format '{{.MemTotal}}'` reports about 16 GB.
-- [ ] 2. Python project: `pyproject.toml` (uv, Python 3.12, poethepoet tasks), pinned dbt-core 1.12.5, dbt-trino 1.10.6, dbt-metricflow[dbt-trino] 0.15.0.
+- [x] 2. Python project: `pyproject.toml` (uv, Python 3.12, poethepoet tasks), pinned dbt-core 1.12.5, dbt-trino 1.10.6, dbt-metricflow[dbt-trino] 0.15.0.
   Check: `uv sync` and `uv run dbt --version` show the pinned versions.
 - [ ] 3. `docker-compose.yml`: Trino 483 (host 18080), PostgreSQL (host 15432), MySQL, MinIO, Apache Polaris; healthchecks; memory limits.
   Check: `uv run poe up` and every service reports healthy.

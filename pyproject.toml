@@ -1,0 +1,21 @@
+[project]
+name = "trino-showcase"
+version = "0.1.0"
+description = "Federated clinic data harmonization PoC: Trino, dbt, Apache Ossie, MetricFlow"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "dbt-core==1.12.5",
+    "dbt-trino==1.10.6",
+    "dbt-metricflow[dbt-trino]==0.15.0",
+]
+
+[dependency-groups]
+dev = [
+    "poethepoet",
+    "pytest",
+]
+
+[tool.uv]
+package = false
+
+[tool.poe.tasks]
