@@ -29,7 +29,7 @@ Synthetic multi-tenant healthcare SaaS: several "client clinics", each with its 
 |---|---|---|
 | `clinic_a` | PostgreSQL (`pg_clinic_a`) | Schema v1 until 2023-12-31, v2 after: renamed columns, `DD.MM.YYYY` dates as `varchar` in v1, gender `M/F/1/2`; patient change log |
 | `clinic_b` | MySQL (`mysql_clinic_b`) | camelCase, soft deletes, money in cents until 2023-06-30, local diagnosis codes + lookup to SNOMED; patient snapshot with `updated_at` |
-| `clinic_c` | Iceberg on MinIO via Polaris (`iceberg`) | Archive tenant, Parquet by month, missing months, prefixed codes and text-only diagnoses |
+| `clinic_c` | Iceberg on RustFS via Polaris (`iceberg`) | Archive tenant, Parquet by month, missing months, prefixed codes and text-only diagnoses |
 
 Source data: Synthea CSV export (run in a container), reshaped by a Python seeder that injects drift, duplicates, nulls and missing months on purpose. The seeder writes a manifest of what it injected; tests treat the manifest as expected values, so any change to injection must update the manifest in the same change.
 
@@ -50,15 +50,17 @@ Key ideas, which require reading several parts together:
 - **Federation first, materialize by exception.** Canonical models are views. Materializing to Iceberg is a measured decision (EXPLAIN ANALYZE before/after, ADR), not a default.
 - **One metric definition.** Metrics live only in Ossie YAML (`semantic/`). MetricFlow and Superset both receive generated definitions; never hand-write metric SQL in marts or in Superset. Tests compare each metric's value across `mf query` and Superset/Trino.
 - **Security** (`trino/etc/`): file-based access control with per-tenant row filters on `tenant_id`, PHI column masks, and an event listener for audit logs. Roles: `tenant_a_analyst`, `cross_tenant_analyst`, `admin`. No authentication in v1; the user comes from `--user`.
+- **Stack bootstrap** is ordered by compose health checks: `polaris-bootstrap` (realm + root credentials in PostgreSQL) and `create-bucket` must finish before Polaris starts; `polaris-setup` (`infra/polaris/setup.sh`, creates catalog `lake` on `s3://warehouse/lake`) must finish before Trino starts. Both are idempotent, so `poe up` is safe to rerun. Changing catalog properties in `setup.sh` takes effect only on a fresh volume (`poe reset`).
 - v2 adds a metadata-driven mapping registry (`mappings/<tenant>.yml` generating staging models), profiling and reconciliation; see `docs/PLAN.md`.
 
 ## Planned commands
 
-Local stack runs on Docker Desktop. Python tooling is uv + Python 3.12; tasks run through poethepoet. Host ports: Trino 18080, PostgreSQL 15432 (5432 and 8080 are taken on the dev machine).
+Local stack runs on Docker Desktop. Python tooling is uv + Python 3.12; tasks run through poethepoet. Host ports are shifted to avoid other local stacks: Trino 18080, PostgreSQL 15432, MySQL 13306, RustFS 19000/19001, Polaris 18181/18182. Inside the compose network services use their standard ports. Stack credentials in `docker-compose.yml` and `infra/` are throwaway local values.
 
 ```bash
 uv sync                                   # Python deps (dbt, MetricFlow, seeder)
-uv run poe up                             # docker compose up -d
+uv run poe up                             # docker compose up -d --wait (works)
+uv run poe down / uv run poe reset        # stop / stop and drop volumes (works)
 uv run poe seed                           # Synthea in a container + load tenants
 uv run dbt build                          # models + tests (profile: trino)
 uv run dbt build --select staging.clinic_a+

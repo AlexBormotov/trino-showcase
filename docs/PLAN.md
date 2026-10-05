@@ -31,7 +31,7 @@ Decisions were settled in a design review on 2026-10-05. Stages are built in ord
 |---|---|---|
 | `clinic_a` | PostgreSQL | Schema v1 until 2023-12-31, v2 from 2024-01-01: renamed columns, `DD.MM.YYYY` dates as `varchar` in v1, gender `M/F/1/2`. Patient history as a change-log table. |
 | `clinic_b` | MySQL | camelCase names, soft deletes. Money in cents until 2023-06-30, then in currency units. Local diagnosis codes with a lookup table to SNOMED CT. Patient history as a current snapshot with `updated_at`. |
-| `clinic_c` | Iceberg on MinIO | Archive tenant, Parquet partitioned by month. 2–3 months missing. Codes stored with a system prefix (`SNOMED:44054006`), some rows with description text only. |
+| `clinic_c` | Iceberg on RustFS (S3) | Archive tenant, Parquet partitioned by month. 2–3 months missing. Codes stored with a system prefix (`SNOMED:44054006`), some rows with description text only. |
 
 Canonical diagnosis code system: SNOMED CT, which is what Synthea emits (verify on Synthea 4.0 output before writing the seeder). ICD crosswalks are out of scope because the official SNOMED-to-ICD-10 map is licensed through UMLS.
 
@@ -41,14 +41,14 @@ Canonical diagnosis code system: SNOMED CT, which is what Synthea emits (verify 
 |---|---|---|
 | Query engine | Trino 483 | The target architecture. |
 | Iceberg catalog | Apache Polaris (Iceberg REST) | Same catalog model as AWS Glue's Iceberg REST endpoint; its RBAC maps to Lake Formation grants. |
-| Object storage | MinIO | S3 API locally. |
+| Object storage | RustFS 1.0.1 | S3 API locally. MinIO was the first choice, but its repository is archived and its images are no longer published (checked 2026-10-05); RustFS is what the Polaris guides use. |
 | Transformations | dbt-core 1.12.5, dbt-trino 1.10.6 | |
 | Metrics | dbt-metricflow[dbt-trino] 0.15.0, apache-ossie-dbt from a pinned apache/ossie commit | The converter is not on PyPI. |
 | BI | Superset | Trino support; screenshots go into the README. |
 | Python | uv, Python 3.12 | dbt does not support 3.14 yet. |
 | Task runner | poethepoet (`uv run poe <task>`) | Needs nothing beyond uv; works on Windows, macOS and Linux. |
 
-Host ports avoid 5432 and 8080, which are taken on the dev machine: Trino on 18080, PostgreSQL on 15432.
+Host ports avoid clashes with other local stacks: Trino 18080, PostgreSQL 15432, MySQL 13306, RustFS 19000 (console 19001), Polaris 18181 (management 18182).
 
 ## Semantic layer
 

@@ -6,7 +6,7 @@ A small-scale proof of concept of a federated data and semantic layer for a mult
 
 ## What it demonstrates
 
-- Federated querying across PostgreSQL, MySQL and Iceberg-on-S3 (MinIO, Apache Polaris REST catalog) with Trino.
+- Federated querying across PostgreSQL, MySQL and Iceberg-on-S3 (RustFS, Apache Polaris REST catalog) with Trino.
 - A canonical model (patient, encounter, diagnosis, claim) over tenants with different schemas, schema versions and history formats, with SCD2 history.
 - One set of metric definitions in Ossie YAML, converted to MetricFlow and pushed to Superset, with tests that the values agree.
 - Tenant isolation, PHI column masking and query audit with Trino access control.
@@ -14,7 +14,7 @@ A small-scale proof of concept of a federated data and semantic layer for a mult
 
 ## Stack
 
-Trino · PostgreSQL · MySQL · Apache Iceberg · Apache Polaris · MinIO · dbt-trino · dbt MetricFlow · Apache Ossie · Superset · Python (uv) · Synthea · Docker Compose · GitHub Actions
+Trino · PostgreSQL · MySQL · Apache Iceberg · Apache Polaris · RustFS · dbt-trino · dbt MetricFlow · Apache Ossie · Superset · Python (uv) · Synthea · Docker Compose · GitHub Actions
 
 ## Production evolution
 
