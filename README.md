@@ -18,7 +18,9 @@ A small-scale proof of concept of a federated data and semantic layer for a mult
 
 Superset at http://localhost:18088, dashboard "Clinic analytics". Its datasets and metrics are generated from the Ossie model (`uv run poe superset`), so it shows the same numbers as `mf query`. Log in as `tenant_a_analyst` and the same dashboard shows only clinic_a with PHI masked: Superset queries Trino as the logged-in user.
 
-<!-- Screenshots: admin view and tenant_a_analyst view of the dashboard -->
+![Clinic analytics dashboard in Superset, admin view](docs/dashboard_screenshot.png)
+
+<!-- To add: the same dashboard logged in as tenant_a_analyst -->
 
 ## Stack
 
