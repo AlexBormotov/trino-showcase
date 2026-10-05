@@ -84,3 +84,7 @@ CREATE TABLE app_v2.claims (
     amount       numeric(12, 2),
     status       text          -- PAID, DENIED, PENDING
 );
+
+-- Trino reads as trino_reader (created in infra/postgres/init.sql): read-only, tenant schemas only.
+GRANT USAGE ON SCHEMA app_v1, app_v2 TO trino_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA app_v1, app_v2 TO trino_reader;

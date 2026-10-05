@@ -34,6 +34,7 @@ services:
       MYSQL_ROOT_PASSWORD: mysql
       MYSQL_DATABASE: clinic_b
     volumes:
+      - ./infra/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - mysql-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pmysql"]
@@ -115,6 +116,9 @@ services:
       polaris-setup: {condition: service_completed_successfully}
     volumes:
       - ./infra/trino/catalog:/etc/trino/catalog:ro
+      - ./infra/trino/access-control.properties:/etc/trino/access-control.properties:ro
+      - ./infra/trino/rules.json:/etc/trino/rules.json:ro
+      - ./infra/trino/event-listener.properties:/etc/trino/event-listener.properties:ro
 
 volumes:
   postgres-data:

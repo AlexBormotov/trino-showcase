@@ -9,7 +9,7 @@ A small-scale proof of concept of a federated data and semantic layer for a mult
 - Federated querying across PostgreSQL, MySQL and Iceberg-on-S3 (RustFS, Apache Polaris REST catalog) with Trino.
 - A canonical model (patient, encounter, diagnosis, claim) over tenants with different schemas, schema versions and history formats, with SCD2 history.
 - One set of metric definitions in Ossie YAML, converted to MetricFlow and pushed to Superset, with tests that the values agree.
-- Tenant isolation, PHI column masking and query audit with Trino access control.
+- Tenant isolation, PHI column masking and query audit with Trino access control: a tenant analyst's query physically reads only that tenant's source, and the audit log shows it.
 - Planned for v2: a metadata-driven mapping registry that generates staging models for many tenants, schema drift detection, profiling and reconciliation.
 
 ## Stack

@@ -1,0 +1,64 @@
+{
+  "catalogs": [
+    {"user": "admin", "allow": "all"},
+    {"user": "tenant_a_analyst|cross_tenant_analyst", "catalog": "iceberg", "allow": "read-only"},
+    {"allow": "none"}
+  ],
+  "schemas": [
+    {"user": "admin", "owner": true},
+    {"owner": false}
+  ],
+  "tables": [
+    {"user": "admin", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
+
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "canonical", "table": "patient",
+     "privileges": ["SELECT"], "filter": "tenant_id = 'clinic_a'",
+     "columns": [
+       {"name": "patient_id", "mask": "to_hex(sha256(to_utf8(patient_id)))"},
+       {"name": "first_name", "mask": "'***'"},
+       {"name": "last_name", "mask": "'***'"},
+       {"name": "ssn", "mask": "to_hex(sha256(to_utf8(ssn)))"},
+       {"name": "address", "mask": "'***'"},
+       {"name": "birth_dt", "mask": "date_trunc('year', birth_dt)"},
+       {"name": "zip", "mask": "substr(zip, 1, 3) || '**'"}
+     ]},
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "canonical", "table": "encounter|diagnosis|claim",
+     "privileges": ["SELECT"], "filter": "tenant_id = 'clinic_a'",
+     "columns": [{"name": "patient_id", "mask": "to_hex(sha256(to_utf8(patient_id)))"}]},
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "marts", "table": "dim_patient",
+     "privileges": ["SELECT"], "filter": "tenant_id = 'clinic_a'",
+     "columns": [
+       {"name": "birth_dt", "mask": "date_trunc('year', birth_dt)"},
+       {"name": "zip", "mask": "substr(zip, 1, 3) || '**'"}
+     ]},
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "marts", "table": "fct_encounter|fct_claim",
+     "privileges": ["SELECT"], "filter": "tenant_id = 'clinic_a'"},
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "semantic", "privileges": ["SELECT"]},
+
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "canonical", "table": "patient",
+     "privileges": ["SELECT"],
+     "columns": [
+       {"name": "patient_id", "mask": "to_hex(sha256(to_utf8(patient_id)))"},
+       {"name": "first_name", "mask": "'***'"},
+       {"name": "last_name", "mask": "'***'"},
+       {"name": "ssn", "mask": "to_hex(sha256(to_utf8(ssn)))"},
+       {"name": "address", "mask": "'***'"},
+       {"name": "birth_dt", "mask": "date_trunc('year', birth_dt)"},
+       {"name": "zip", "mask": "substr(zip, 1, 3) || '**'"}
+     ]},
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "canonical", "table": "encounter|diagnosis|claim",
+     "privileges": ["SELECT"],
+     "columns": [{"name": "patient_id", "mask": "to_hex(sha256(to_utf8(patient_id)))"}]},
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "marts", "table": "dim_patient",
+     "privileges": ["SELECT"],
+     "columns": [
+       {"name": "birth_dt", "mask": "date_trunc('year', birth_dt)"},
+       {"name": "zip", "mask": "substr(zip, 1, 3) || '**'"}
+     ]},
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "marts", "table": "fct_encounter|fct_claim",
+     "privileges": ["SELECT"]},
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "semantic", "privileges": ["SELECT"]},
+
+    {"privileges": []}
+  ]
+}
