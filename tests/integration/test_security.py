@@ -138,3 +138,12 @@ def test_denied_attempts_are_audited():
     denied("tenant_a_analyst", f"SELECT count(*) FROM pg_clinic_a.app_v2.patients -- {tag}")
     user, _, state, error = audit_row(tag)
     assert (user, state, error) == ("tenant_a_analyst", "FAILED", "PERMISSION_DENIED")
+
+
+def test_new_tables_are_invisible_to_analysts_until_ruled():
+    query("admin", "CREATE OR REPLACE VIEW iceberg.semantic.unruled_probe AS SELECT 'clinic_b' AS tenant_id")
+    try:
+        for user in ("tenant_a_analyst", "cross_tenant_analyst"):
+            assert denied(user, "SELECT * FROM iceberg.semantic.unruled_probe")
+    finally:
+        query("admin", "DROP VIEW iceberg.semantic.unruled_probe")

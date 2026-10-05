@@ -33,7 +33,7 @@
      ]},
     {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "marts", "table": "fct_encounter|fct_claim",
      "privileges": ["SELECT"], "filter": "tenant_id = 'clinic_a'"},
-    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "semantic", "privileges": ["SELECT"]},
+    {"user": "tenant_a_analyst", "catalog": "iceberg", "schema": "semantic", "table": "metricflow_time_spine", "privileges": ["SELECT"]},
 
     {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "canonical", "table": "patient",
      "privileges": ["SELECT"],
@@ -57,7 +57,7 @@
      ]},
     {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "marts", "table": "fct_encounter|fct_claim",
      "privileges": ["SELECT"]},
-    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "semantic", "privileges": ["SELECT"]},
+    {"user": "cross_tenant_analyst", "catalog": "iceberg", "schema": "semantic", "table": "metricflow_time_spine", "privileges": ["SELECT"]},
 
     {"privileges": []}
   ]
