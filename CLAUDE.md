@@ -74,7 +74,7 @@ uv run poe semantic                       # dbt parse + Ossie -> target/semantic
 PYTHONIOENCODING=utf-8 uv run mf query --metrics encounter_count --group-by encounter__tenant_id   # (works)
 uv run poe superset                        # publish Ossie datasets/metrics/charts to Superset, http://localhost:18088 (works)
 uv run pytest                             # all tests; integration ones need the stack up and a seed (works)
-uv run pytest -m "not integration"        # unit tests only (works)
+uv run pytest tests/unit                   # unit tests only; no stack or seed needed (works)
 uv run pytest tests/unit/test_build.py::test_clinic_b_money_is_in_cents_before_mid_2023
 docker compose exec trino trino --user tenant_a_analyst   # see the data as an analyst (works)
 ```
