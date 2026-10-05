@@ -1,0 +1,32 @@
+version: 0.2.0.dev0
+name: clinic_analytics
+description: Metrics over the canonical clinic model. The single source of metric definitions.
+datasets:
+  - name: encounter
+    source: iceberg.canonical.encounter
+    primary_key: [encounter]
+    description: One row per clinical encounter, all tenants.
+    custom_extensions:
+      # MetricFlow needs a default time dimension per dataset; the converter does not derive one.
+      - vendor_name: DBT
+        data: '{"agg_time_dimension": "start_ts"}'
+    fields:
+      # Named after the entity: MetricFlow addresses dimensions as <key field>__<dimension>.
+      - name: encounter
+        expression: {dialects: [{dialect: ANSI_SQL, expression: encounter_hk}]}
+        datatype: String
+      - name: tenant_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: tenant_id}]}
+        datatype: String
+      - name: encounter_class
+        expression: {dialects: [{dialect: ANSI_SQL, expression: encounter_class}]}
+        datatype: String
+      - name: start_ts
+        expression: {dialects: [{dialect: ANSI_SQL, expression: start_ts}]}
+        datatype: DateTime
+        dimension: {is_time: true}
+metrics:
+  - name: encounter_count
+    description: Number of encounters.
+    datatype: Integer
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(encounter.*)}]}

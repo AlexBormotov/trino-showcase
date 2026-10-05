@@ -13,3 +13,5 @@ models:
       +schema: staging
     canonical:
       +schema: canonical
+    semantic:
+      +schema: semantic

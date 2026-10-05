@@ -13,6 +13,8 @@ dependencies = [
     "psycopg[binary]>=3.3.6",
     "pymysql>=1.2.3",
     "pyiceberg[pyarrow,pyiceberg-core]>=0.12.0",
+    "apache-ossie",
+    "apache-ossie-dbt",
 ]
 
 [dependency-groups]
@@ -24,12 +26,22 @@ dev = [
 [tool.uv]
 package = false
 
+# Apache Ossie is not on PyPI yet: install from a pinned apache/ossie commit.
+[tool.uv.sources]
+apache-ossie = { git = "https://github.com/apache/ossie", rev = "bc839fb2d2db30c39804d71a1556ae4f8212638f", subdirectory = "python" }
+apache-ossie-dbt = { git = "https://github.com/apache/ossie", rev = "bc839fb2d2db30c39804d71a1556ae4f8212638f", subdirectory = "converters/dbt" }
+
 [tool.poe.tasks]
 up = "docker compose up -d --wait"
 down = "docker compose down"
 reset = "docker compose down -v"
 synthea = "python -m seed.synthea"
 seed = "python -m seed"
+
+[tool.poe.tasks.semantic]
+help = "Compile semantic/clinic_analytics.yaml (Ossie) into target/semantic_manifest.json for MetricFlow"
+sequence = [{ cmd = "dbt parse --quiet" }, { cmd = "python -m semantic.compile" }]
+env = { PYTHONIOENCODING = "utf-8" }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

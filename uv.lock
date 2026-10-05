@@ -35,6 +35,27 @@ wheels = [
 ]
 
 [[package]]
+name = "apache-ossie"
+version = "0.2.0.dev0"
+source = { git = "https://github.com/apache/ossie?subdirectory=python&rev=bc839fb2d2db30c39804d71a1556ae4f8212638f#bc839fb2d2db30c39804d71a1556ae4f8212638f" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[[package]]
+name = "apache-ossie-dbt"
+version = "0.2.0.dev0"
+source = { git = "https://github.com/apache/ossie?subdirectory=converters%2Fdbt&rev=bc839fb2d2db30c39804d71a1556ae4f8212638f#bc839fb2d2db30c39804d71a1556ae4f8212638f" }
+dependencies = [
+    { name = "apache-ossie" },
+    { name = "jinja2" },
+    { name = "metricflow" },
+    { name = "pyyaml" },
+    { name = "sqlglot" },
+]
+
+[[package]]
 name = "attrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1244,6 +1265,8 @@ name = "trino-showcase"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "apache-ossie" },
+    { name = "apache-ossie-dbt" },
     { name = "dbt-core" },
     { name = "dbt-metricflow", extra = ["dbt-trino"] },
     { name = "dbt-trino" },
@@ -1263,6 +1286,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "apache-ossie", git = "https://github.com/apache/ossie?subdirectory=python&rev=bc839fb2d2db30c39804d71a1556ae4f8212638f" },
+    { name = "apache-ossie-dbt", git = "https://github.com/apache/ossie?subdirectory=converters%2Fdbt&rev=bc839fb2d2db30c39804d71a1556ae4f8212638f" },
     { name = "dbt-core", specifier = "==1.12.5" },
     { name = "dbt-metricflow", extras = ["dbt-trino"], specifier = "==0.15.0" },
     { name = "dbt-trino", specifier = "==1.10.6" },

@@ -1,28 +1,19 @@
-# Stage 2: canonical model in dbt-trino
+# Stage 3: semantic layer (Ossie -> MetricFlow)
 
-Goal: `patient` (SCD2), `encounter`, `diagnosis`, `claim` as views over all three tenants, proven equal to the clean source. Scope and decisions: `docs/PLAN.md`. Finished stages: `tasks/done/`.
+Goal: the five planned metrics defined once in Ossie, queryable with `mf query` on Trino, with values proven by independent checks. Scope: `docs/PLAN.md`; decision: ADR 0003.
 
-Oracle: the seeder records the clean Synthea truth per tenant (before drift) in the manifest. The canonical model must reproduce it, and must flag exactly the anomalies that were injected.
-
-- [x] 1. dbt skeleton: `dbt_project.yml`, `profiles.yml` (Trino, catalog `iceberg`), `generate_schema_name` without prefixing, `sources.yml` for the four source schemas.
-  Check: `dbt debug` passes; a trivial view lands in `iceberg.staging` and is queryable (Trino views stored in Polaris).
-- [x] 2. Manifest `expected` block computed from the clean source: per tenant patients, encounters (minus clinic_c missing months), diagnoses, coded diagnoses, claims by status, encounter cost sum, gender counts.
-  Check: unit test that drift does not leak into `expected`.
-- [x] 3. Transform macros (`parse_dmy_ts`, `parse_dmy_date`, `gender_code`, `cents_to_amount`, `strip_code_prefix`, `surrogate_key`) and staging views: `clinic_a` v1 and v2, `clinic_b`, `clinic_c`, all in canonical column names and types.
-  Check: `dbt build --select staging` green.
-- [x] 4. Canonical `encounter`, `diagnosis`, `claim`: union over tenants, `tenant_id`, `source_system`, `source_schema_version`, surrogate keys; generic tests (unique, not_null, accepted_values, relationships with orphans as warn).
-  Check: `dbt build --select canonical` green.
-- [x] 5. Canonical `patient` with SCD2: history from the `clinic_a` change log, single open version for snapshot tenants; singular tests for no overlaps and exactly one current row.
-  Check: tests green; a mover in `clinic_a` has two versions.
-- [x] 6. pytest reconciliation: canonical vs manifest `expected` per tenant (counts, cost sum, status counts, gender, coded share); orphan claims and text-only diagnoses equal the injected counts.
+- [x] 1. Spike: one metric (encounter_count) from Ossie through `ossie-to-msi` to `mf query` on Trino.
+  Check: result equals the manifest expectation per tenant. Outcome: works with glue for four converter gaps (ADR 0003).
+- [ ] 2. Row-level facts the metrics need, in dbt (`models/marts/`): length of stay for inpatient encounters, 30-day readmission flag (an inpatient admission within 30 days of an inpatient discharge of the same patient and tenant).
+  Check: dbt tests; the readmission flag is cross-checked by a test query written differently (self-join, not window function).
+- [ ] 3. Ossie model: datasets `encounter`, `claim`, `patient` (current), relationships; metrics `encounter_count`, `active_patients`, `avg_length_of_stay_days`, `readmission_rate_30d`, `claim_denial_rate`.
+  Check: `poe semantic` has no converter issues; `mf list metrics` lists all five.
+- [ ] 4. pytest: each metric per tenant through MetricFlow (Python API or CLI) equals an independent expectation: manifest (`encounter_count`, denial rate) or a hand-written SQL over the canonical model (the rest), plus one query by `metric_time__month`.
   Check: tests pass, plus a negative control.
-- [x] 7. Query plan check: a filter on `tenant_id` over the canonical union prunes the other tenants' branches.
-  Check: EXPLAIN shows a single remote source.
-- [x] 8. ADR 0002 (canonical views in the lake catalog, SCD2 approach), CLAUDE.md commands, commit.
+- [ ] 5. Round trip: `msi-to-ossie` on the compiled manifest gives back the same metric names; record what is lost.
+  Check: a test.
+- [ ] 6. `docs/metrics.md` metric catalog (definition, grain, caveats such as claims including medication claims), CLAUDE.md, commit.
 
 ## Review
 
-- dbt: 20 views (16 staging, 4 canonical), 50 data tests: 48 pass, 2 warn by design (archive orphans, 4,123 claims and 1,260 diagnoses, exactly as injected).
-- pytest: 39 pass (10 unit, 29 integration). Negative control: removing the `clinic_b` soft-delete filter fails exactly `test_encounters_and_cost`.
-- Plan: a `tenant_id` filter prunes the union to one source; `count(*)` with filters runs whole inside MySQL; the cents `CASE` blocks aggregate pushdown (first materialization candidate, ADR 0002).
-- Deviations: Iceberg views reject `char(n)`, staging casts to varchar; keys named `_hk` (hash of business key) instead of "surrogate key".
+(filled in when the stage is done)

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Stages 1 (sources and federation) and 2 (canonical model) are done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
+Stages 1 (sources and federation) and 2 (canonical model) are done, stage 3 (semantic layer) is in progress; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
 
 ## Working rules
 
@@ -68,7 +68,8 @@ uv run poe synthea                        # Synthea in a container -> data/synth
 uv run poe seed                           # build tenant tables, write data/manifest.json, load all stores (works)
 uv run dbt build                          # models + tests; profiles.yml is in the repo root (works)
 uv run dbt build --select staging.clinic_a+   # one tenant and everything downstream (works)
-uv run mf query --metrics encounter_count --group-by encounter__tenant_id
+uv run poe semantic                       # dbt parse + Ossie -> target/semantic_manifest.json (works)
+PYTHONIOENCODING=utf-8 uv run mf query --metrics encounter_count --group-by encounter__tenant_id   # (works)
 uv run pytest                             # all tests; integration ones need the stack up and a seed (works)
 uv run pytest -m "not integration"        # unit tests only (works)
 uv run pytest tests/unit/test_build.py::test_clinic_b_money_is_in_cents_before_mid_2023
@@ -80,5 +81,6 @@ docker exec -it trino trino --user tenant_a_analyst
 - Canonical names: `snake_case`, singular table names, `_dt` for dates, `_ts` for timestamps, `_id` for keys, `_amount` for money in currency units.
 - Trino lowercases identifiers: MySQL camelCase tables and columns appear as `visit`, `isdeleted` (the catalog sets `case-insensitive-name-matching=true`).
 - SQL is Trino dialect. Check that predicates push down to PostgreSQL/MySQL connectors (`EXPLAIN`) when writing staging filters.
-- Ossie is pre-release (spec 0.2.0.dev0 on main, Apache Incubator since July 2026). Pin the apache/ossie commit, and verify the spec and the `ossie-dbt` converter against that commit before writing or changing `semantic/` files; do not write the YAML format from memory.
+- Ossie is pre-release (spec 0.2.0.dev0, Apache Incubator since July 2026). The converter is pinned to an apache/ossie commit in `pyproject.toml`; verify the spec at that commit before changing `semantic/clinic_analytics.yaml`, do not write the YAML from memory. Rules learned in the spike (ADR 0003): set `dimension: {is_time: true}` explicitly; name a dataset's key field after the entity (`encounter`, expression `encounter_hk`); declare `agg_time_dimension` per dataset in a `custom_extensions` DBT entry. `dbt parse` alone overwrites `target/semantic_manifest.json` without metrics, so run `poe semantic` before `mf`.
+- `mf` and `ossie-dbt` print non-ASCII characters and crash on a Windows cp1251 console unless `PYTHONIOENCODING=utf-8` is set.
 - Docs live in `docs/`: `PLAN.md`, `adr/`, metric catalog. `dbt docs` provides lineage.
