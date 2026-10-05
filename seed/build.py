@@ -288,11 +288,41 @@ def build(csv_dir: Path, seed: int = 42) -> tuple[dict[str, Tenant], dict]:
     tenants = {name: fn(parts[name], np.random.default_rng([seed, i])) for i, (name, fn) in enumerate(builders.items())}
     manifest = {
         "window": [str(WINDOW_START.date()), str(WINDOW_END.date())],
+        "expected": {name: expected(parts[name], tenants[name]) for name in TENANTS},
         "source": {name: {k: len(v) for k, v in parts[name].items()} for name in TENANTS},
         "tables": {name: {k: len(v) for k, v in t.tables.items()} for name, t in tenants.items()},
         "injected": {name: t.injected for name, t in tenants.items()},
     }
     return tenants, manifest
+
+
+def expected(src: dict[str, pd.DataFrame], tenant: Tenant) -> dict:
+    """What the canonical model must show for a tenant, from the clean source.
+
+    Computed from Synthea frames, not from the drifted tenant tables, so drift
+    handling is checked against the truth. Only encounters lost from the
+    clinic_c archive are subtracted: no model can recover rows that are gone.
+    Claim statuses are injected, so their counts come from the builder.
+    """
+    enc = src["encounters"]
+    lost = enc["START"].dt.strftime("%Y-%m").isin(tenant.injected.get("missing_months", []))
+    kept = enc[~lost]
+    claims = len(src["claims"])
+    return {
+        "patients": len(src["patients"]),
+        "patients_by_gender": {k: int(v) for k, v in src["patients"]["GENDER"].value_counts().sort_index().items()},
+        "encounters": len(kept),
+        "encounter_cost_sum": round(float(kept["TOTAL_CLAIM_COST"].sum()), 2),
+        "diagnoses": len(src["conditions"]),
+        "coded_diagnoses": len(src["conditions"]) - tenant.injected.get("text_only_diagnoses", 0),
+        "claims": claims,
+        "claims_by_status": {
+            "denied": tenant.injected["denied_claims"],
+            "pending": tenant.injected["pending_claims"],
+            "paid": claims - tenant.injected["denied_claims"] - tenant.injected["pending_claims"],
+        },
+        "claim_amount_sum": round(float(src["claims"]["TOTAL_CLAIM_COST"].sum()), 2),
+    }
 
 
 def _utc_naive(s: pd.Series) -> pd.Series:

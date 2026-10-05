@@ -114,3 +114,17 @@ def test_clinic_c_codes_are_prefixed_or_missing(src, monkeypatch):
     assert codes.isna().sum() == t.injected["text_only_diagnoses"]
     assert codes.dropna().str.startswith("SNOMED:").all()
     assert t.tables["conditions"]["description"].notna().all()
+
+
+def test_expected_comes_from_the_clean_source(src):
+    a, b_, c = b.clinic_a(src, rng()), b.clinic_b(src, rng()), b.clinic_c(src, rng())
+    for tenant in (a, b_, c):
+        exp = b.expected(src, tenant)
+        assert exp["patients"] == 3 and exp["patients_by_gender"] == {"F": 1, "M": 2}
+        assert exp["diagnoses"] == 6 and exp["claims"] == 6
+        assert sum(exp["claims_by_status"].values()) == 6
+        assert exp["claim_amount_sum"] == 466.5
+    # cents in clinic_b and lost months in clinic_c must not leak into the expectation
+    assert b.expected(src, b_)["encounter_cost_sum"] == 466.5
+    assert b.expected(src, c)["encounters"] == 3
+    assert b.expected(src, c)["encounter_cost_sum"] == 466.5 - 100.25 - 10.0 - 75.75

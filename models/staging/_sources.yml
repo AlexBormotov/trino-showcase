@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: clinic_a_v1
+    description: clinic_a (PostgreSQL), schema version 1, activity before 2024-01-01.
+    database: pg_clinic_a
+    schema: app_v1
+    tables:
+      - name: visit
+      - name: dx
+      - name: bill
+
+  - name: clinic_a_v2
+    description: clinic_a (PostgreSQL), schema version 2, activity from 2024-01-01 and all patients.
+    database: pg_clinic_a
+    schema: app_v2
+    tables:
+      - name: patients
+      - name: patient_cdc
+      - name: encounters
+      - name: diagnoses
+      - name: claims
+
+  - name: clinic_b
+    description: clinic_b (MySQL). Trino exposes camelCase names in lower case.
+    database: mysql_clinic_b
+    schema: clinic_b
+    tables:
+      - name: patient
+      - name: visit
+      - name: visitdiagnosis
+      - name: dxcode
+      - name: claim
+
+  - name: clinic_c
+    description: clinic_c archive (Iceberg via Polaris).
+    database: iceberg
+    schema: clinic_c
+    tables:
+      - name: patients
+      - name: encounters
+      - name: conditions
+      - name: claims

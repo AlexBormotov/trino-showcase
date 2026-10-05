@@ -1,0 +1,88 @@
+version: 2
+
+x-tenants: &tenants
+  arguments:
+    values: [clinic_a, clinic_b, clinic_c]
+
+models:
+  - name: patient
+    description: One row per patient version (SCD2 on address). `patient_hk` is the durable key across versions.
+    columns:
+      - name: patient_version_hk
+        data_tests: [unique, not_null]
+      - name: patient_hk
+        data_tests: [not_null]
+      - name: tenant_id
+        data_tests: [not_null, {accepted_values: *tenants}]
+      - name: gender
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [M, F]
+      - name: birth_dt
+        data_tests: [not_null]
+      - name: valid_from_ts
+        data_tests: [not_null]
+
+  - name: encounter
+    columns:
+      - name: encounter_hk
+        data_tests: [unique, not_null]
+      - name: patient_hk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('patient')
+                field: patient_hk
+      - name: tenant_id
+        data_tests: [not_null, {accepted_values: *tenants}]
+      - name: start_ts
+        data_tests: [not_null]
+      - name: encounter_class
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ambulatory, wellness, outpatient, urgentcare, emergency, inpatient, home, virtual, hospice, snf]
+      - name: total_cost_amount
+        data_tests: [not_null]
+
+  - name: diagnosis
+    columns:
+      - name: diagnosis_hk
+        data_tests: [unique, not_null]
+      - name: encounter_hk
+        data_tests:
+          # The clinic_c archive lost whole months of encounters; their diagnoses remain.
+          - relationships:
+              arguments:
+                to: ref('encounter')
+                field: encounter_hk
+              config:
+                severity: warn
+      - name: onset_dt
+        data_tests: [not_null]
+      - name: diagnosis_description
+        data_tests: [not_null]
+
+  - name: claim
+    columns:
+      - name: claim_hk
+        data_tests: [unique, not_null]
+      - name: encounter_hk
+        data_tests:
+          # Same archive gap as diagnosis: claims of lost encounters remain.
+          - relationships:
+              arguments:
+                to: ref('encounter')
+                field: encounter_hk
+              config:
+                severity: warn
+      - name: claim_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [paid, denied, pending]
+      - name: claim_amount
+        data_tests: [not_null]

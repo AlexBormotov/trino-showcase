@@ -1,29 +1,28 @@
-# Stage 1: sources and federation
+# Stage 2: canonical model in dbt-trino
 
-Goal: three tenants with injected drift, all readable through Trino. Scope and decisions: `docs/PLAN.md`.
+Goal: `patient` (SCD2), `encounter`, `diagnosis`, `claim` as views over all three tenants, proven equal to the clean source. Scope and decisions: `docs/PLAN.md`. Finished stages: `tasks/done/`.
 
-- [x] 1. Docker resources: raise `.wslconfig` memory to 16GB, swap 4GB (needs `wsl --shutdown`, ask the user first).
-  Check: `docker info --format '{{.MemTotal}}'` reports about 16 GB.
-- [x] 2. Python project: `pyproject.toml` (uv, Python 3.12, poethepoet tasks), pinned dbt-core 1.12.5, dbt-trino 1.10.6, dbt-metricflow[dbt-trino] 0.15.0.
-  Check: `uv sync` and `uv run dbt --version` show the pinned versions.
-- [x] 3. `docker-compose.yml`: Trino 483 (host 18080), PostgreSQL (host 15432), MySQL, RustFS (MinIO is archived), Apache Polaris; healthchecks; memory limits.
-  Check: `uv run poe up` and every service reports healthy.
-- [x] 4. Polaris bootstrap script: realm, principal, catalog backed by a RustFS bucket. Trino `iceberg` catalog over Polaris REST.
-  Check: `CREATE SCHEMA iceberg.clinic_c` and a test table round-trip through Trino.
-- [x] 5. Synthea in an `eclipse-temurin:17` container: 2,000 patients, 5 years, seed 42, CSV export to `data/synthea/`.
-  Check: CSVs present. Confirm the code system in `conditions.csv` is SNOMED CT; if not, revisit the diagnosis-code decision in `docs/PLAN.md`.
-- [x] 6. Seeder: split patients across tenants, reshape into each tenant's dialect, inject drift per `docs/PLAN.md`, write `data/manifest.json`.
-  Check: unit tests on the reshaping functions.
-- [x] 7. Load tenants: PostgreSQL `clinic_a`, MySQL `clinic_b`, Iceberg `clinic_c` (written through Trino).
-  Check: per-table row counts through Trino match `data/manifest.json`.
-- [x] 8. Federated smoke query: one `UNION ALL` of patient counts over the three catalogs; `EXPLAIN` shows the filters pushed down to PostgreSQL and MySQL.
-  Check: a pytest runs the query and compares the counts with the manifest.
-- [x] 9. Update `CLAUDE.md` commands that now work; ADR 0001 on the catalog choice (Polaris REST vs JDBC vs Hive Metastore).
+Oracle: the seeder records the clean Synthea truth per tenant (before drift) in the manifest. The canonical model must reproduce it, and must flag exactly the anomalies that were injected.
+
+- [x] 1. dbt skeleton: `dbt_project.yml`, `profiles.yml` (Trino, catalog `iceberg`), `generate_schema_name` without prefixing, `sources.yml` for the four source schemas.
+  Check: `dbt debug` passes; a trivial view lands in `iceberg.staging` and is queryable (Trino views stored in Polaris).
+- [x] 2. Manifest `expected` block computed from the clean source: per tenant patients, encounters (minus clinic_c missing months), diagnoses, coded diagnoses, claims by status, encounter cost sum, gender counts.
+  Check: unit test that drift does not leak into `expected`.
+- [x] 3. Transform macros (`parse_dmy_ts`, `parse_dmy_date`, `gender_code`, `cents_to_amount`, `strip_code_prefix`, `surrogate_key`) and staging views: `clinic_a` v1 and v2, `clinic_b`, `clinic_c`, all in canonical column names and types.
+  Check: `dbt build --select staging` green.
+- [x] 4. Canonical `encounter`, `diagnosis`, `claim`: union over tenants, `tenant_id`, `source_system`, `source_schema_version`, surrogate keys; generic tests (unique, not_null, accepted_values, relationships with orphans as warn).
+  Check: `dbt build --select canonical` green.
+- [x] 5. Canonical `patient` with SCD2: history from the `clinic_a` change log, single open version for snapshot tenants; singular tests for no overlaps and exactly one current row.
+  Check: tests green; a mover in `clinic_a` has two versions.
+- [x] 6. pytest reconciliation: canonical vs manifest `expected` per tenant (counts, cost sum, status counts, gender, coded share); orphan claims and text-only diagnoses equal the injected counts.
+  Check: tests pass, plus a negative control.
+- [x] 7. Query plan check: a filter on `tenant_id` over the canonical union prunes the other tenants' branches.
+  Check: EXPLAIN shows a single remote source.
+- [x] 8. ADR 0002 (canonical views in the lake catalog, SCD2 approach), CLAUDE.md commands, commit.
 
 ## Review
 
-- 30 tests pass (9 unit, 21 integration). Negative control: deleting one PostgreSQL row fails exactly the two dependent tests.
-- Data: ~6,150 patients in the window, about 2,000 per tenant; claims outnumber encounters about 1.8 to 1 because Synthea bills medications separately on the same encounter.
-- Synthea codes conditions in SNOMED-CT, so the plan's diagnosis-code decision stands.
-- Deviations: MinIO -> RustFS (archived upstream); Polaris needed `drop-with-purge.enabled`; PyIceberg needs the `pyiceberg-core` extra for month partitioning; Trino's MySQL catalog needs `case-insensitive-name-matching`.
-- Pushdown confirmed: filter + count(*) are sent whole to PostgreSQL and MySQL.
+- dbt: 20 views (16 staging, 4 canonical), 50 data tests: 48 pass, 2 warn by design (archive orphans, 4,123 claims and 1,260 diagnoses, exactly as injected).
+- pytest: 39 pass (10 unit, 29 integration). Negative control: removing the `clinic_b` soft-delete filter fails exactly `test_encounters_and_cost`.
+- Plan: a `tenant_id` filter prunes the union to one source; `count(*)` with filters runs whole inside MySQL; the cents `CASE` blocks aggregate pushdown (first materialization candidate, ADR 0002).
+- Deviations: Iceberg views reject `char(n)`, staging casts to varchar; keys named `_hk` (hash of business key) instead of "surrogate key".

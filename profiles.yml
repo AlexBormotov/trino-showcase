@@ -1,0 +1,13 @@
+trino_showcase:
+  target: local
+  outputs:
+    local:
+      type: trino
+      method: none
+      user: admin
+      host: localhost
+      port: 18080
+      http_scheme: http
+      database: iceberg   # models are views stored in the lake catalog (Polaris)
+      schema: canonical
+      threads: 4
