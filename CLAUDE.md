@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Stages 1 (sources and federation), 2 (canonical model), 3 (semantic layer), 4 (security) and 5 (Superset) are done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
+The MVP (stages 1–6: sources, canonical model, semantic layer, security, Superset, CI) is done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below is implemented unless marked "planned" or "v2"; keep it that way when the code changes.
 
 ## Working rules
 
@@ -58,9 +58,9 @@ Key ideas, which require reading several parts together:
 - **Stack bootstrap** is ordered by compose health checks: `polaris-bootstrap` (realm + root credentials in PostgreSQL) and `create-bucket` must finish before Polaris starts; `polaris-setup` (`infra/polaris/setup.sh`, creates catalog `lake` on `s3://warehouse/lake`) must finish before Trino starts. Both are idempotent, so `poe up` is safe to rerun. Changing catalog properties in `setup.sh` takes effect only on a fresh volume (`poe reset`).
 - v2 adds a metadata-driven mapping registry (`mappings/<tenant>.yml` generating staging models), profiling and reconciliation; see `docs/PLAN.md`.
 
-## Planned commands
+## Commands
 
-Local stack runs on Docker Desktop. Python tooling is uv + Python 3.12; tasks run through poethepoet. Host ports are shifted to avoid other local stacks: Trino 18080, PostgreSQL 15432, MySQL 13306, RustFS 19000/19001, Polaris 18181/18182. Inside the compose network services use their standard ports. Stack credentials in `docker-compose.yml` and `infra/` are throwaway local values.
+Local stack runs on Docker Desktop. `.github/workflows/ci.yml` runs the same sequence on every push (Synthea population 300 instead of 6,000): unit tests, `docker compose up --build --wait`, synthea, seed, `dbt build`, `poe semantic`, `poe superset`, integration tests. Keep the workflow and these commands in step. Python tooling is uv + Python 3.12; tasks run through poethepoet. Host ports are shifted to avoid other local stacks: Trino 18080, PostgreSQL 15432, MySQL 13306, RustFS 19000/19001, Polaris 18181/18182. Inside the compose network services use their standard ports. Stack credentials in `docker-compose.yml` and `infra/` are throwaway local values.
 
 ```bash
 uv sync                                   # Python deps (dbt, MetricFlow, seeder)

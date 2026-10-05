@@ -1,8 +1,10 @@
 # Federated Clinic Data Harmonization PoC
 
+[![ci](https://github.com/AlexBormotov/trino-showcase/actions/workflows/ci.yml/badge.svg)](https://github.com/AlexBormotov/trino-showcase/actions/workflows/ci.yml)
+
 A small-scale proof of concept of a federated data and semantic layer for a multi-tenant healthcare platform. Several synthetic "client clinics" live in different databases, each with its own schema conventions and five years of history with schema drift. Data is queried **in place** through Trino and mapped to one canonical model with dbt-trino. Business metrics are defined once in Apache Ossie (ex-Open Semantic Interchange) and served through dbt MetricFlow and Superset.
 
-> Status: design settled, implementation in progress. Scope, decisions and the MVP definition of done are in [docs/PLAN.md](docs/PLAN.md). Sections below describe the target, not working code.
+> Status: MVP complete. CI brings the whole stack up from scratch on every push and runs dbt plus 85 tests. Scope and decisions: [docs/PLAN.md](docs/PLAN.md) and [docs/adr/](docs/adr/); metric definitions: [docs/metrics.md](docs/metrics.md).
 
 ## What it demonstrates
 
