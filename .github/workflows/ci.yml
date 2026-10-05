@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PYTHONIOENCODING: utf-8
+      # Small fixed population: same seed as local runs, minutes instead of the full 6,000.
+      SYNTHEA_POPULATION: "300"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+      - name: Start the stack
+        run: docker compose up -d --build --wait
+
+      - name: Cache the Synthea jar
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/cache
+          key: synthea-v4.0.0
+
+      - name: Generate synthetic patients
+        run: uv run python -m seed.synthea "$SYNTHEA_POPULATION"
+
+      - name: Load tenants
+        run: uv run poe seed
+
+      - name: dbt build
+        run: uv run dbt build
+
+      - name: Compile and publish metrics
+        run: |
+          uv run poe semantic
+          uv run poe superset
+
+      - name: Integration tests
+        run: uv run pytest -m integration
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color > compose.log
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: compose-logs
+          path: compose.log
