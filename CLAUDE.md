@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Stages 1 (sources and federation), 2 (canonical model), 3 (semantic layer) and 4 (security) are done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
+Stages 1 (sources and federation), 2 (canonical model), 3 (semantic layer), 4 (security) and 5 (Superset) are done; see `tasks/todo.md` for the current stage and `tasks/done/` for finished ones. Decisions: `docs/adr/`. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
 
 ## Working rules
 
@@ -41,7 +41,7 @@ sources (pg / mysql / iceberg)  ->  Trino catalogs  ->  dbt-trino
    canonical/                          (union over tenants, tenant_id column, views by default)
    marts/                              (fct_encounter, fct_claim, dim_patient: row-level flags)
 -> semantic/clinic_analytics.yaml (Ossie) -> semantic/compile.py -> target/semantic_manifest.json -> mf
-                                         -> Superset metrics (planned)
+                                         -> semantic/superset_sync.py -> Superset datasets, metrics, dashboard
 ```
 
 Key ideas, which require reading several parts together:
@@ -51,9 +51,9 @@ Key ideas, which require reading several parts together:
 - **Canonical model** (`models/canonical/`): `patient`, `encounter`, `diagnosis`, `claim`, all views stored in Polaris (`iceberg.canonical`). Keys are hashes of business keys (`<entity>_hk`, macro `hash_key`); `patient_hk` is durable across versions, `patient_version_hk` identifies an SCD2 version. Every row carries `tenant_id`, `source_system`, `source_schema_version`. `patient` keeps SCD2 history (`valid_from_ts`/`valid_to_ts`/`is_current`), replayed from the `clinic_a` change log; snapshot tenants have one open version. See ADR 0002.
 - **Federation first, materialize by exception.** Canonical models are views. Materializing to Iceberg is a measured decision (EXPLAIN ANALYZE before/after, ADR), not a default.
 - **Oracles.** `data/manifest.json` holds `expected` (clean Synthea truth per tenant) and `injected` (what drift was added). `tests/integration/test_canonical.py` requires the canonical model to equal `expected`, and orphan counts to equal `injected`. dbt relationship tests on `clinic_c` orphans are `warn` by design. Never loosen a reconciliation assertion to make it pass: find which transform is wrong.
-- **One metric definition.** Metrics live only in `semantic/clinic_analytics.yaml` (Ossie); `docs/metrics.md` explains them. MetricFlow (and later Superset) receive generated definitions; never hand-write metric SQL in marts or BI. Marts hold only row-level flags (`readmitted_30d`, `denied_claim`, ...) that Ossie aggregates, because Ossie expressions cannot span rows. `tests/integration/test_metrics.py` checks every metric against the manifest or independent SQL; `tests/unit/test_semantic.py` checks the Ossie round trip.
+- **One metric definition.** Metrics live only in `semantic/clinic_analytics.yaml` (Ossie); `docs/metrics.md` explains them. MetricFlow and Superset receive generated definitions (Superset via sqlglot translation, ADR 0005); never hand-write metric SQL in marts or BI. Marts hold only row-level flags (`readmitted_30d`, `denied_claim`, ...) that Ossie aggregates, because Ossie expressions cannot span rows. `tests/integration/test_metrics.py` checks every metric against the manifest or independent SQL; `tests/unit/test_semantic.py` checks the Ossie round trip.
 - **Security** (`infra/trino/rules.json`, ADR 0004): file-based access control, deny by default, first matching rule wins. Analysts (`tenant_a_analyst`, `cross_tenant_analyst`) see only `iceberg.canonical|marts|semantic`, with PHI masks; `tenant_a_analyst` also gets `tenant_id = 'clinic_a'`. **A new model in `canonical` or `marts` is invisible to analysts until it gets a rule for each analyst role; add masks if it has PHI columns, and a filter if it has `tenant_id`.** Trino reads sources as read-only `trino_reader`. Every query is audited to MySQL `trino_audit` (catalog `audit`, admin only). There is no authentication: the user name is trusted as sent. Rules are read at startup: restart Trino after editing.
-- **Users in code**: dbt, MetricFlow and the tests run as `admin`; `tests/integration/test_security.py` uses the analyst roles.
+- **Users in code**: dbt, MetricFlow and the tests run as `admin`; `tests/integration/test_security.py` uses the analyst roles. Superset impersonates its logged-in user towards Trino; Superset logins are `admin`/`admin`, and each analyst's password equals the user name (throwaway local values).
 - **Seeder** (`seed/`): `build.py` is pure pandas (Synthea frames -> tenant dialects + injected drift, unit-tested on tiny fixtures), `load.py` writes PostgreSQL via COPY, MySQL via batched inserts, and Iceberg via PyIceberg straight to Polaris (not through Trino). Tenant DDL lives in `infra/tenants/*.sql`. Integration tests compare Trino counts with `data/manifest.json`.
 - **Stack bootstrap** is ordered by compose health checks: `polaris-bootstrap` (realm + root credentials in PostgreSQL) and `create-bucket` must finish before Polaris starts; `polaris-setup` (`infra/polaris/setup.sh`, creates catalog `lake` on `s3://warehouse/lake`) must finish before Trino starts. Both are idempotent, so `poe up` is safe to rerun. Changing catalog properties in `setup.sh` takes effect only on a fresh volume (`poe reset`).
 - v2 adds a metadata-driven mapping registry (`mappings/<tenant>.yml` generating staging models), profiling and reconciliation; see `docs/PLAN.md`.
@@ -72,6 +72,7 @@ uv run dbt build                          # models + tests; profiles.yml is in t
 uv run dbt build --select staging.clinic_a+   # one tenant and everything downstream (works)
 uv run poe semantic                       # dbt parse + Ossie -> target/semantic_manifest.json (works)
 PYTHONIOENCODING=utf-8 uv run mf query --metrics encounter_count --group-by encounter__tenant_id   # (works)
+uv run poe superset                        # publish Ossie datasets/metrics/charts to Superset, http://localhost:18088 (works)
 uv run pytest                             # all tests; integration ones need the stack up and a seed (works)
 uv run pytest -m "not integration"        # unit tests only (works)
 uv run pytest tests/unit/test_build.py::test_clinic_b_money_is_in_cents_before_mid_2023

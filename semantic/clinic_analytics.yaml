@@ -114,24 +114,39 @@ metrics:
   - name: encounter_count
     description: Number of encounters.
     datatype: Integer
+    custom_extensions:
+      - vendor_name: SUPERSET
+        data: '{"d3format": ",d"}'
     expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(encounter.*)}]}
 
   - name: active_patients
     description: Distinct patients with at least one encounter in the period.
     datatype: Integer
+    custom_extensions:
+      - vendor_name: SUPERSET
+        data: '{"d3format": ",d"}'
     expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT encounter.patient_hk)}]}
 
   - name: avg_length_of_stay_days
     description: Average inpatient length of stay, in days.
     datatype: Decimal
+    custom_extensions:
+      - vendor_name: SUPERSET
+        data: '{"d3format": ".2f"}'
     expression: {dialects: [{dialect: ANSI_SQL, expression: (SUM(encounter.length_of_stay_days)) / (SUM(encounter.inpatient_stay))}]}
 
   - name: readmission_rate_30d
     description: Share of inpatient stays followed by another inpatient admission within 30 days of discharge.
     datatype: Decimal
+    custom_extensions:
+      - vendor_name: SUPERSET
+        data: '{"d3format": ".1%"}'
     expression: {dialects: [{dialect: ANSI_SQL, expression: (SUM(encounter.readmitted_30d)) / (SUM(encounter.inpatient_stay))}]}
 
   - name: claim_denial_rate
     description: Denied claims over adjudicated (paid or denied) claims. Pending claims are excluded.
     datatype: Decimal
+    custom_extensions:
+      - vendor_name: SUPERSET
+        data: '{"d3format": ".2%"}'
     expression: {dialects: [{dialect: ANSI_SQL, expression: (SUM(claim.denied_claim)) / (SUM(claim.adjudicated_claim))}]}

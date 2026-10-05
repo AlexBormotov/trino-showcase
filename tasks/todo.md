@@ -1,18 +1,19 @@
-# Stage 4: security (tenant isolation, PHI masking, audit)
+# Stage 5: BI (Superset) on the Ossie metrics
 
-Goal: analysts see only their tenant's rows and never raw PHI, cannot bypass that through source catalogs, and every query is audited. Scope: `docs/PLAN.md`.
+Goal: a Superset dashboard whose metrics are generated from the Ossie model, showing the same numbers as MetricFlow, and respecting Trino's per-user rules. Scope: `docs/PLAN.md` (Q8, Q14); requirement from ADR 0004: BI must pass the end user's identity to Trino.
 
-- [x] 1. Least-privilege source credentials: Trino reads PostgreSQL and MySQL as read-only users limited to the tenant schemas; the seeder keeps admin credentials.
-  Check: reads work; `INSERT` through `pg_clinic_a` and `mysql_clinic_b` fails; the MySQL catalog shows only `clinic_b`.
-- [x] 2. Trino file-based access control: `admin` (all), `cross_tenant_analyst` (canonical, marts, semantic; PHI masked), `tenant_a_analyst` (same plus row filter `tenant_id = 'clinic_a'`); everyone else denied. Masks: names and address hidden, SSN and source patient id hashed, birth date to year, ZIP to 3 digits.
-  Check: pytest per role (rows, masks, denied source/staging access, unknown user denied).
-- [x] 3. Audit: MySQL event listener writes every completed query (user, SQL, tables, state) to `trino_audit`; an `audit` catalog exposes it to `admin` only.
-  Check: a tagged query by `tenant_a_analyst` appears in the audit table; analysts cannot read it.
-- [x] 4. ADR 0004 (access model, what file-based rules cannot do, path to OPA/Ranger/Starburst and Polaris RBAC), CLAUDE.md, README, commit.
+- [x] 1. Superset 6.1.0 image with the Trino driver; compose service (SQLite metadata, localhost port 18088); bootstrap creates admin and the two analyst users.
+  Check: `/health` OK, login works.
+- [x] 2. `semantic/superset_sync.py`: Trino database with user impersonation; one dataset per Ossie dataset; metrics translated from Ossie with sqlglot (qualifiers dropped, ratios as double with NULLIF); time columns marked. Idempotent.
+  Check: unit tests on the expression translation; a second run changes nothing.
+- [x] 3. Charts and a dashboard created by the same script.
+  Check: dashboard opens, every chart returns data through the chart data API.
+- [x] 4. pytest parity: each metric per tenant from the Superset chart data API equals `mf query`; logged in as `tenant_a_analyst`, Superset returns only clinic_a.
+  Check: tests pass, plus a negative control.
+- [x] 5. ADR 0005, README (how to open the dashboard, screenshots placeholders for the user), CLAUDE.md, commit.
 
 ## Review
 
-- 24 security tests (rows, masks, bypass attempts, unknown user, read-only sources, audit of finished and denied queries); full suite 73 passed. Negative control: dropping the clinic_a filter on encounter/diagnosis/claim fails exactly the 4 isolation tests.
-- Audit `inputs_json` shows physical isolation: a tenant_a query on the canonical union reads only PostgreSQL.
-- The MySQL listener's table has no timestamp columns at Trino 483 (order by `query_id`, which is time-prefixed).
-- Open, recorded in ADR 0004: no authentication; unsalted SSN hash; mf runs as admin (BI stage must impersonate users); storage keys bypass Trino.
+- Superset 6.1.0 with the Trino driver; sync script publishes 3 datasets, 5 metrics (translated by sqlglot), 6 charts and the dashboard; a second run changes nothing.
+- Tests: 6 unit (translation, layout), 5 integration: values equal `mf query` per tenant, every chart's query returns data, tenant_a sees only clinic_a, and the audit log shows Superset queries arriving as the viewer. Negative control: syncing a changed readmission denominator to Superset only fails the parity test.
+- Not verified: chart rendering in a browser (Chrome automation did not log in and froze on screenshots). The user checks visually while taking README screenshots.

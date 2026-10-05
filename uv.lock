@@ -1276,6 +1276,8 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyiceberg", extra = ["pyarrow", "pyiceberg-core"] },
     { name = "pymysql" },
+    { name = "requests" },
+    { name = "sqlglot" },
 ]
 
 [package.dev-dependencies]
@@ -1297,6 +1299,8 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=25.0.1" },
     { name = "pyiceberg", extras = ["pyarrow", "pyiceberg-core"], specifier = ">=0.12.0" },
     { name = "pymysql", specifier = ">=1.2.3" },
+    { name = "requests", specifier = ">=2.34.2" },
+    { name = "sqlglot", specifier = ">=30.21.0" },
 ]
 
 [package.metadata.requires-dev]

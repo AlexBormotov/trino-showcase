@@ -17,6 +17,8 @@ dependencies = [
     # cannot be resolved from PyPI (where they are unclaimed) by pip or other tools.
     "apache-ossie @ git+https://github.com/apache/ossie@bc839fb2d2db30c39804d71a1556ae4f8212638f#subdirectory=python",
     "apache-ossie-dbt @ git+https://github.com/apache/ossie@bc839fb2d2db30c39804d71a1556ae4f8212638f#subdirectory=converters/dbt",
+    "requests>=2.34.2",
+    "sqlglot>=30.21.0",
 ]
 
 [dependency-groups]
@@ -35,6 +37,7 @@ down = "docker compose down"
 reset = "docker compose down -v"
 synthea = "python -m seed.synthea"
 seed = "python -m seed"
+superset = "python -m semantic.superset_sync"
 
 [tool.poe.tasks.semantic]
 help = "Compile semantic/clinic_analytics.yaml (Ossie) into target/semantic_manifest.json for MetricFlow"

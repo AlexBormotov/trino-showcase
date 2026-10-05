@@ -12,6 +12,12 @@ A small-scale proof of concept of a federated data and semantic layer for a mult
 - Tenant isolation, PHI column masking and query audit with Trino access control: a tenant analyst's query physically reads only that tenant's source, and the audit log shows it.
 - Planned for v2: a metadata-driven mapping registry that generates staging models for many tenants, schema drift detection, profiling and reconciliation.
 
+## Dashboard
+
+Superset at http://localhost:18088, dashboard "Clinic analytics". Its datasets and metrics are generated from the Ossie model (`uv run poe superset`), so it shows the same numbers as `mf query`. Log in as `tenant_a_analyst` and the same dashboard shows only clinic_a with PHI masked: Superset queries Trino as the logged-in user.
+
+<!-- Screenshots: admin view and tenant_a_analyst view of the dashboard -->
+
 ## Stack
 
 Trino · PostgreSQL · MySQL · Apache Iceberg · Apache Polaris · RustFS · dbt-trino · dbt MetricFlow · Apache Ossie · Superset · Python (uv) · Synthea · Docker Compose · GitHub Actions
