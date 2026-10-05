@@ -26,7 +26,7 @@ Two smaller ones: the converter README shows `model_dump_json()`, but the manife
 
 - `semantic/clinic_analytics.yaml` (Ossie) is the only place metrics are defined.
 - `uv run poe semantic` (`dbt parse` + `semantic/compile.py`) builds the MetricFlow manifest from it. The glue is limited to the gaps above. Every other part of a metric comes from the converter unchanged.
-- apache/ossie stays pinned to a commit in `pyproject.toml` (`[tool.uv.sources]`). Moving the pin means re-running the semantic tests and re-checking each gap in the table.
+- apache/ossie stays pinned to a commit in `pyproject.toml`, as PEP 508 direct git references in `dependencies`. With name-only requirements, any installer other than uv would look up `apache-ossie` and `apache-ossie-dbt` on PyPI, where those names are unclaimed. Moving the pin means re-running the semantic tests and re-checking each gap in the table.
 
 ## Consequences
 

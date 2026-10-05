@@ -13,8 +13,10 @@ dependencies = [
     "psycopg[binary]>=3.3.6",
     "pymysql>=1.2.3",
     "pyiceberg[pyarrow,pyiceberg-core]>=0.12.0",
-    "apache-ossie",
-    "apache-ossie-dbt",
+    # Not on PyPI yet. Direct git references pin the commit for any installer, so the names
+    # cannot be resolved from PyPI (where they are unclaimed) by pip or other tools.
+    "apache-ossie @ git+https://github.com/apache/ossie@bc839fb2d2db30c39804d71a1556ae4f8212638f#subdirectory=python",
+    "apache-ossie-dbt @ git+https://github.com/apache/ossie@bc839fb2d2db30c39804d71a1556ae4f8212638f#subdirectory=converters/dbt",
 ]
 
 [dependency-groups]
@@ -26,10 +28,6 @@ dev = [
 [tool.uv]
 package = false
 
-# Apache Ossie is not on PyPI yet: install from a pinned apache/ossie commit.
-[tool.uv.sources]
-apache-ossie = { git = "https://github.com/apache/ossie", rev = "bc839fb2d2db30c39804d71a1556ae4f8212638f", subdirectory = "python" }
-apache-ossie-dbt = { git = "https://github.com/apache/ossie", rev = "bc839fb2d2db30c39804d71a1556ae4f8212638f", subdirectory = "converters/dbt" }
 
 [tool.poe.tasks]
 up = "docker compose up -d --wait"
