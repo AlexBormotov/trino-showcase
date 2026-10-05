@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Design settled, implementation not started. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
+Stage 1 (sources and federation) is done; see `tasks/todo.md` for the current stage. `docs/PLAN.md` is the source of truth for scope, stack versions, tenant drift and the MVP definition of done; read it before planning any stage. `README.md` is the public face and holds the "Production evolution" section (Starburst, AWS Lake Formation); keep it in sync when the architecture changes. Everything below describes the target design. Update this file as pieces get built, and remove the "planned" notes once a command actually works.
 
 ## Working rules
 
@@ -50,6 +50,7 @@ Key ideas, which require reading several parts together:
 - **Federation first, materialize by exception.** Canonical models are views. Materializing to Iceberg is a measured decision (EXPLAIN ANALYZE before/after, ADR), not a default.
 - **One metric definition.** Metrics live only in Ossie YAML (`semantic/`). MetricFlow and Superset both receive generated definitions; never hand-write metric SQL in marts or in Superset. Tests compare each metric's value across `mf query` and Superset/Trino.
 - **Security** (`trino/etc/`): file-based access control with per-tenant row filters on `tenant_id`, PHI column masks, and an event listener for audit logs. Roles: `tenant_a_analyst`, `cross_tenant_analyst`, `admin`. No authentication in v1; the user comes from `--user`.
+- **Seeder** (`seed/`): `build.py` is pure pandas (Synthea frames -> tenant dialects + injected drift, unit-tested on tiny fixtures), `load.py` writes PostgreSQL via COPY, MySQL via batched inserts, and Iceberg via PyIceberg straight to Polaris (not through Trino). Tenant DDL lives in `infra/tenants/*.sql`. Integration tests compare Trino counts with `data/manifest.json`.
 - **Stack bootstrap** is ordered by compose health checks: `polaris-bootstrap` (realm + root credentials in PostgreSQL) and `create-bucket` must finish before Polaris starts; `polaris-setup` (`infra/polaris/setup.sh`, creates catalog `lake` on `s3://warehouse/lake`) must finish before Trino starts. Both are idempotent, so `poe up` is safe to rerun. Changing catalog properties in `setup.sh` takes effect only on a fresh volume (`poe reset`).
 - v2 adds a metadata-driven mapping registry (`mappings/<tenant>.yml` generating staging models), profiling and reconciliation; see `docs/PLAN.md`.
 
@@ -61,17 +62,21 @@ Local stack runs on Docker Desktop. Python tooling is uv + Python 3.12; tasks ru
 uv sync                                   # Python deps (dbt, MetricFlow, seeder)
 uv run poe up                             # docker compose up -d --wait (works)
 uv run poe down / uv run poe reset        # stop / stop and drop volumes (works)
-uv run poe seed                           # Synthea in a container + load tenants
+uv run poe synthea                        # Synthea in a container -> data/synthea/csv (slow, ~5 min; works)
+uv run poe seed                           # build tenant tables, write data/manifest.json, load all stores (works)
 uv run dbt build                          # models + tests (profile: trino)
 uv run dbt build --select staging.clinic_a+
 uv run mf query --metrics encounter_count --group-by encounter__tenant_id
-uv run pytest                             # RLS, CLS, manifest counts, metric parity
+uv run pytest                             # all tests; integration ones need the stack up and a seed (works)
+uv run pytest -m "not integration"        # unit tests only (works)
+uv run pytest tests/unit/test_build.py::test_clinic_b_money_is_in_cents_before_mid_2023
 docker exec -it trino trino --user tenant_a_analyst
 ```
 
 ## Conventions
 
 - Canonical names: `snake_case`, singular table names, `_dt` for dates, `_ts` for timestamps, `_id` for keys, `_amount` for money in currency units.
+- Trino lowercases identifiers: MySQL camelCase tables and columns appear as `visit`, `isdeleted` (the catalog sets `case-insensitive-name-matching=true`).
 - SQL is Trino dialect. Check that predicates push down to PostgreSQL/MySQL connectors (`EXPLAIN`) when writing staging filters.
 - Ossie is pre-release (spec 0.2.0.dev0 on main, Apache Incubator since July 2026). Pin the apache/ossie commit, and verify the spec and the `ossie-dbt` converter against that commit before writing or changing `semantic/` files; do not write the YAML format from memory.
 - Docs live in `docs/`: `PLAN.md`, `adr/`, metric catalog. `dbt docs` provides lineage.

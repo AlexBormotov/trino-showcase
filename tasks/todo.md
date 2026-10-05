@@ -10,16 +10,20 @@ Goal: three tenants with injected drift, all readable through Trino. Scope and d
   Check: `uv run poe up` and every service reports healthy.
 - [x] 4. Polaris bootstrap script: realm, principal, catalog backed by a RustFS bucket. Trino `iceberg` catalog over Polaris REST.
   Check: `CREATE SCHEMA iceberg.clinic_c` and a test table round-trip through Trino.
-- [ ] 5. Synthea in an `eclipse-temurin:17` container: 2,000 patients, 5 years, seed 42, CSV export to `data/synthea/`.
+- [x] 5. Synthea in an `eclipse-temurin:17` container: 2,000 patients, 5 years, seed 42, CSV export to `data/synthea/`.
   Check: CSVs present. Confirm the code system in `conditions.csv` is SNOMED CT; if not, revisit the diagnosis-code decision in `docs/PLAN.md`.
-- [ ] 6. Seeder: split patients across tenants, reshape into each tenant's dialect, inject drift per `docs/PLAN.md`, write `data/manifest.json`.
+- [x] 6. Seeder: split patients across tenants, reshape into each tenant's dialect, inject drift per `docs/PLAN.md`, write `data/manifest.json`.
   Check: unit tests on the reshaping functions.
-- [ ] 7. Load tenants: PostgreSQL `clinic_a`, MySQL `clinic_b`, Iceberg `clinic_c` (written through Trino).
+- [x] 7. Load tenants: PostgreSQL `clinic_a`, MySQL `clinic_b`, Iceberg `clinic_c` (written through Trino).
   Check: per-table row counts through Trino match `data/manifest.json`.
-- [ ] 8. Federated smoke query: one `UNION ALL` of patient counts over the three catalogs; `EXPLAIN` shows the filters pushed down to PostgreSQL and MySQL.
+- [x] 8. Federated smoke query: one `UNION ALL` of patient counts over the three catalogs; `EXPLAIN` shows the filters pushed down to PostgreSQL and MySQL.
   Check: a pytest runs the query and compares the counts with the manifest.
-- [ ] 9. Update `CLAUDE.md` commands that now work; ADR 0001 on the catalog choice (Polaris REST vs JDBC vs Hive Metastore).
+- [x] 9. Update `CLAUDE.md` commands that now work; ADR 0001 on the catalog choice (Polaris REST vs JDBC vs Hive Metastore).
 
 ## Review
 
-(filled in when the stage is done)
+- 30 tests pass (9 unit, 21 integration). Negative control: deleting one PostgreSQL row fails exactly the two dependent tests.
+- Data: ~6,150 patients in the window, about 2,000 per tenant; claims outnumber encounters about 1.8 to 1 because Synthea bills medications separately on the same encounter.
+- Synthea codes conditions in SNOMED-CT, so the plan's diagnosis-code decision stands.
+- Deviations: MinIO -> RustFS (archived upstream); Polaris needed `drop-with-purge.enabled`; PyIceberg needs the `pyiceberg-core` extra for month partitioning; Trino's MySQL catalog needs `case-insensitive-name-matching`.
+- Pushdown confirmed: filter + count(*) are sent whole to PostgreSQL and MySQL.
