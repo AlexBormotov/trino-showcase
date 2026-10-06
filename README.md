@@ -2,33 +2,192 @@
 
 [![ci](https://github.com/AlexBormotov/trino-showcase/actions/workflows/ci.yml/badge.svg)](https://github.com/AlexBormotov/trino-showcase/actions/workflows/ci.yml)
 
-A small-scale proof of concept of a federated data and semantic layer for a multi-tenant healthcare platform. Several synthetic "client clinics" live in different databases, each with its own schema conventions and five years of history with schema drift. Data is queried **in place** through Trino and mapped to one canonical model with dbt-trino. Business metrics are defined once in Apache Ossie (ex-Open Semantic Interchange) and served through dbt MetricFlow and Superset.
+A small-scale proof of concept of a federated data and semantic layer for a multi-tenant healthcare platform. Three synthetic "client clinics" keep the same business entities (patients, encounters, diagnoses, claims) in different databases, each with its own column names, formats, schema versions and gaps in five years of history. Nothing is copied into a central store: Trino reads the data in place, dbt maps it to one canonical model as views, and business metrics are defined once in Apache Ossie (ex-Open Semantic Interchange), from which MetricFlow and Superset get generated definitions. Trino also enforces security: each analyst sees only their tenant, PHI is masked, and every query is audited. Each layer is tested against the clean source truth that the data generator recorded.
 
 > Status: MVP complete. CI brings the whole stack up from scratch on every push and runs dbt plus 85 tests. Scope and decisions: [docs/PLAN.md](docs/PLAN.md) and [docs/adr/](docs/adr/); metric definitions: [docs/metrics.md](docs/metrics.md).
 
-## What it demonstrates
+**Stack:** Trino · PostgreSQL · MySQL · Apache Iceberg · Apache Polaris · RustFS · dbt-trino · dbt MetricFlow · Apache Ossie · Superset · sqlglot · Python (uv) · Synthea · Docker Compose · GitHub Actions
 
-- Federated querying across PostgreSQL, MySQL and Iceberg-on-S3 (RustFS, Apache Polaris REST catalog) with Trino.
-- A canonical model (patient, encounter, diagnosis, claim) over tenants with different schemas, schema versions and history formats, with SCD2 history.
-- One set of metric definitions in Ossie YAML, converted to MetricFlow and pushed to Superset, with tests that the values agree.
-- Tenant isolation, PHI column masking and query audit with Trino access control: a tenant analyst's query physically reads only that tenant's source, and the audit log shows it.
-- Planned for v2: a metadata-driven mapping registry that generates staging models for many tenants, schema drift detection, profiling and reconciliation.
+## Architecture
 
-## Dashboard
+```
+ Synthea (in a container)
+   │  CSV: patients, encounters, conditions, claims (clean synthetic data)
+   ▼
+ seed/build.py   splits patients across 3 tenants, injects real-world drift,
+   │             writes data/manifest.json (clean truth + what was injected)
+   ▼
+ seed/load.py
+   ├── clinic_a ──► PostgreSQL  (schemas app_v1, app_v2)              COPY
+   ├── clinic_b ──► MySQL       (camelCase, soft deletes)              INSERT
+   └── clinic_c ──► Iceberg     (Parquet on RustFS, Polaris catalog)   PyIceberg → REST
+                       │
+                       ▼
+ Trino 483   catalogs pg_clinic_a, mysql_clinic_b, iceberg, audit
+   │         + access rules (rules.json) + query audit (MySQL event listener)
+   ▼
+ dbt-trino   all models are views, stored in Polaris as Iceberg views
+   staging/     one view per source table and schema version: translation to canonical names and types
+   canonical/   patient (SCD2), encounter, diagnosis, claim = UNION ALL over tenants
+   marts/       fct_encounter, fct_claim, dim_patient: row-level flags for metrics
+   │
+   ▼
+ semantic/clinic_analytics.yaml   ← the only place metrics are defined (Ossie)
+   ├── semantic/compile.py       → target/semantic_manifest.json → MetricFlow (mf query) → Trino
+   └── semantic/superset_sync.py → Superset datasets, metrics, dashboard → Trino, as the viewer
+```
 
-Superset at http://localhost:18088, dashboard "Clinic analytics". Its datasets and metrics are generated from the Ossie model (`uv run poe superset`), so it shows the same numbers as `mf query`. Log in as `tenant_a_analyst` and the same dashboard shows only clinic_a with PHI masked: Superset queries Trino as the logged-in user.
+## How it works
+
+### 1. Sources and federation
+
+Synthea 4.0 generates realistic patients in a throwaway Java container with a fixed seed and reference date, so every run produces the same data. `seed/build.py` (pure pandas, unit-tested) cuts a five-year window, assigns patients to tenants by a hash of their id, and makes each tenant look like a different legacy system:
+
+| Tenant | Store | Deliberate drift |
+|---|---|---|
+| `clinic_a` | PostgreSQL | Two schema versions: `app_v1` until 2024 (dates as `DD.MM.YYYY` strings, other column names, gender `1/2`) and `app_v2` after. Address history as a CDC log |
+| `clinic_b` | MySQL | camelCase names; duplicate visits soft-deleted with `isDeleted = 1`; amounts in **cents until 2023-07-01** and in dollars after, in the same column; local diagnosis codes with a dictionary to SNOMED; no history |
+| `clinic_c` | Iceberg on RustFS | Archive partitioned by month with three months missing; codes prefixed `SNOMED:`, 5% of diagnoses with text only; claims of the lost encounters remain as orphans |
+
+Claim statuses are spelled differently in each tenant (`P/D/O`, `PAID/DENIED`, `approved/rejected`, `paid/denied`). Synthea closes every claim, so the seeder injects about 8% denials.
+
+Trino reaches the sources over JDBC (PostgreSQL, MySQL) and Iceberg REST plus S3 (Polaris, RustFS). Polaris stores its metadata in PostgreSQL; RustFS replaces MinIO, whose repository is archived. Compose health checks order the bootstrap: Polaris realm and bucket first, then Polaris, then catalog setup, then Trino. Every step is idempotent. Filters and `count(*)` on PostgreSQL and MySQL are pushed down whole (visible in `EXPLAIN`). [ADR 0001](docs/adr/0001-iceberg-catalog-and-object-storage.md)
+
+### 2. Canonical model (dbt-trino)
+
+- **Staging** has one view per source table and schema version. It renames columns, fixes types and applies shared macros (`parse_dmy_ts`, `gender_code`, `cents_to_amount`, `strip_code_prefix`, `hash_key`). Tenant-specific logic lives only here.
+- **Canonical** is a `UNION ALL` of staging with Data-Vault-style hash keys (`patient_hk = md5(tenant_id | patient_id)`), stable and unique across tenants.
+- **SCD2 on patient address**: `clinic_a` versions are replayed from its CDC log; tenants without history get one open version.
+- **Everything is a view** stored in Polaris, so nothing is written to tenant databases: federation first, materialize by exception. A `tenant_id` filter prunes the union to a single source; the cents-to-dollars `CASE` blocks aggregate pushdown and is the first materialization candidate. [ADR 0002](docs/adr/0002-canonical-model-as-federated-views.md)
+
+### 3. Semantic layer (Ossie → MetricFlow)
+
+Five metrics live in `semantic/clinic_analytics.yaml`: `encounter_count`, `active_patients`, `avg_length_of_stay_days`, `readmission_rate_30d`, `claim_denial_rate` ([catalog](docs/metrics.md)). Row-level facts the metrics need, such as the 30-day readmission flag, are dbt marts, because Ossie expressions aggregate fields of one row and cannot look across rows.
+
+`uv run poe semantic` runs `dbt parse` and then `semantic/compile.py`. The official Ossie converter (pinned to an apache/ossie commit, not on PyPI) turns the YAML into `target/semantic_manifest.json`, and the script fills its gaps: the time spine and the default time dimension. `mf query` then reads that manifest and runs SQL on Trino. [ADR 0003](docs/adr/0003-ossie-as-metric-source.md) lists the converter gaps found along the way.
+
+### 4. Security
+
+Trino enforces everything for every consumer (`infra/trino/rules.json`, deny by default):
+
+| User | Sees | Rows | PHI |
+|---|---|---|---|
+| `admin` | everything | all | raw |
+| `cross_tenant_analyst` | `canonical`, `marts`, the time spine | all tenants | masked |
+| `tenant_a_analyst` | same | `clinic_a` only | masked |
+| anyone else | nothing | – | – |
+
+- **Masks:** names and address become `***`, SSN and source patient id are hashed, birth date keeps the year, ZIP keeps three digits.
+- **No bypass:** analysts have no access to the source catalogs or staging, and the models are `SECURITY DEFINER` views.
+- **Read-only sources:** Trino reads PostgreSQL and MySQL as read-only users.
+- **Audit:** a MySQL event listener records every query, including denied ones, with the physical tables it read. That record shows that a `tenant_a_analyst` query on the shared union touches only PostgreSQL: isolation is physical, not only logical.
+
+Known gaps (no authentication, unsalted hashes, storage keys outside Trino) are recorded in [ADR 0004](docs/adr/0004-access-control-and-audit.md).
+
+### 5. BI (Superset)
+
+`uv run poe superset` publishes the Ossie model through Superset's REST API: one Trino connection, a dataset per Ossie dataset, metrics translated to Trino SQL with sqlglot, six charts and a dashboard. Reruns change nothing. The translation drops dataset qualifiers, casts ratios to `DOUBLE` with `NULLIF`, and rejects cross-dataset metrics. The connection impersonates the logged-in user, so the same dashboard shows `tenant_a_analyst` only clinic_a with PHI masked. [ADR 0005](docs/adr/0005-superset-from-ossie.md)
 
 ![Clinic analytics dashboard in Superset, admin view](docs/dashboard_screenshot.png)
 
 <!-- To add: the same dashboard logged in as tenant_a_analyst -->
 
-## Stack
+### 6. Tests and CI
 
-Trino · PostgreSQL · MySQL · Apache Iceberg · Apache Polaris · RustFS · dbt-trino · dbt MetricFlow · Apache Ossie · Superset · Python (uv) · Synthea · Docker Compose · GitHub Actions
+A check never repeats the logic it checks:
 
-## Production evolution
+| Checked | Against |
+|---|---|
+| Source loads | Row counts the seeder wrote, from `data/manifest.json` |
+| Canonical model | The manifest's `expected` block: truth computed from clean Synthea data **before** drift. The model must recover it: cents back to dollars, soft-deleted duplicates dropped, gender codes unified |
+| Archive orphans | The manifest's `injected` counts, exactly |
+| Readmission flag | The same rule written differently (`EXISTS` instead of a grouped join) |
+| MetricFlow metrics | The manifest, or SQL over the canonical model that bypasses marts and MetricFlow |
+| Superset metrics | `mf query`, per tenant |
+| Security | Queries as each role, bypass attempts, the audit log |
+| Ossie ↔ MetricFlow | Round-trip conversion |
 
-This PoC runs on open-source Trino on one machine. Below is how two components the PoC leaves out would fit if it moved toward production.
+Every stage was also given a negative control: break the rule, see exactly the expected tests fail, restore it. The cross-checks caught real bugs. One was overlapping inpatient stays that made a `lead()`-based readmission flag miss 61 readmissions.
+
+`.github/workflows/ci.yml` runs the whole sequence below on every push, with 300 synthetic patients instead of 6,000 (about 7 minutes).
+
+## Run it locally
+
+### Requirements
+
+- **Docker** with Compose v2 (Docker Desktop on Windows and macOS). The containers are capped at about 7.5 GB of memory in total; give Docker at least 8 GB. Images take about 6 GB of disk.
+- **[uv](https://docs.astral.sh/uv/)**. It installs Python 3.12 and every dependency, including dbt, MetricFlow and the Ossie converter.
+- **git** and internet access on the first run: images, the 200 MB Synthea jar, and the Ossie converter from GitHub.
+- Java is not needed: Synthea runs in a container.
+
+### Commands
+
+```bash
+git clone https://github.com/AlexBormotov/trino-showcase.git
+cd trino-showcase
+uv sync                         # Python 3.12 environment from uv.lock
+
+uv run poe up                   # start the stack and wait until healthy (first run builds Superset)
+uv run poe synthea              # generate 6,000 patients (~5 min); or quicker: uv run python -m seed.synthea 300
+uv run poe seed                 # build the three tenants, write data/manifest.json, load PostgreSQL, MySQL, Iceberg
+uv run dbt build                # staging, canonical and marts views + dbt tests
+uv run poe semantic             # Ossie -> target/semantic_manifest.json for MetricFlow
+uv run poe superset             # Ossie -> Superset datasets, metrics, charts, dashboard
+
+uv run pytest                   # all tests (integration tests need the steps above)
+uv run pytest tests/unit        # unit tests only, no stack needed
+```
+
+Explore:
+
+```bash
+uv run mf query --metrics encounter_count,readmission_rate_30d --group-by encounter__tenant_id
+uv run mf query --metrics claim_denial_rate --group-by patient__gender
+docker compose exec trino trino --user tenant_a_analyst   # the data as an analyst sees it
+docker compose exec trino trino --user admin              # everything, including the audit catalog
+```
+
+Superset is at http://localhost:18088. Log in as `admin` / `admin`, or as `tenant_a_analyst` / `tenant_a_analyst` to see the same dashboard filtered and masked.
+
+Stop with `uv run poe down`. To also drop all data, run `uv run poe reset`.
+
+| Service | Host port |
+|---|---|
+| Trino | 18080 |
+| Superset | 18088 |
+| PostgreSQL | 15432 |
+| MySQL | 13306 |
+| Polaris | 18181 (management 18182) |
+| RustFS | 19000 (console 19001) |
+
+All ports are bound to `127.0.0.1` and all credentials are throwaway local values. Trino has no authentication, so do not expose the stack to a network.
+
+On a Windows console, set `PYTHONIOENCODING=utf-8` before running `mf` directly: it prints characters that cp1251 cannot encode. The `poe` tasks already set it.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `docker-compose.yml`, `infra/` | Stack; Trino catalogs, access rules and audit; Polaris setup; database init scripts; tenant DDL; Superset image |
+| `seed/` | Synthea runner; tenant builder with drift injection; loaders |
+| `models/`, `macros/`, `tests/dbt/` | dbt staging, canonical and marts models; transform macros; singular tests |
+| `semantic/` | Ossie model; MetricFlow compilation; Superset sync |
+| `tests/unit/`, `tests/integration/` | pytest |
+| `docs/` | Plan, ADRs, metric catalog |
+
+## Beyond the MVP
+
+Planned for v2:
+
+- a metadata-driven mapping registry (`mappings/<tenant>.yml`) that generates staging models, with N tenant schemas from one template, to show how this scales to hundreds of clients;
+- schema drift detection and profiling over `information_schema` of every catalog;
+- `provider` as a canonical entity.
+
+Hardening, from ADR 0004:
+
+- authentication in Trino (TLS, then password, then OAuth2/SSO with tenant groups);
+- OPA or Apache Ranger instead of the rules file;
+- a keyed HMAC instead of plain hashes.
 
 ### Starburst
 
