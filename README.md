@@ -173,7 +173,7 @@ On a Windows console, set `PYTHONIOENCODING=utf-8` before running `mf` directly:
 | `models/`, `macros/`, `tests/dbt/` | dbt staging, canonical and marts models; transform macros; singular tests |
 | `semantic/` | Ossie model; MetricFlow compilation; Superset sync |
 | `tests/unit/`, `tests/integration/` | pytest |
-| `docs/` | Plan, ADRs, metric catalog |
+| `docs/` | Plan, ADRs, metric catalog; `docs/obsidian/` is an Obsidian vault (open the folder as a vault for Graph View) with a note per area and per source file |
 
 ## Beyond the MVP
 
